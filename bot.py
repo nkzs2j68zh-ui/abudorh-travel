@@ -1,28 +1,17 @@
-import os
-import re
-import time
-import sqlite3
+import os, re, time, sqlite3
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-
-from aiogram import Bot, Dispatcher, F, Router
+from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode, ChatMemberStatus
 from aiogram.filters import CommandStart, Command
-from aiogram.types import (
-    Message,
-    ChatPermissions,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from aiogram.types import Message, ChatPermissions, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
 load_dotenv()
-
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 BRAND_NAME = os.getenv("BRAND_NAME", "بوت أبو دره الشريف").strip()
-
 if not TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
 
@@ -32,453 +21,239 @@ router = Router()
 dp.include_router(router)
 
 DB_PATH = "abudorh_bot.db"
-
-# حماية المجموعة - نسخة أكثر أمانًا
 FLOOD_LIMIT = 7
 FLOOD_WINDOW = 10
 MUTE_MINUTES = 30
 BAN_AFTER_WARNINGS = 6
-
 flood_cache = defaultdict(lambda: deque(maxlen=30))
 
-SEXUAL_RE = re.compile(
-    r"(?:porn|porno|xxx|sex|nude|onlyfans|"
-    r"اباحي|إباحي|اباحية|إباحية|جنسي|جنسية|سكس|عاري|عارية)",
-    re.I,
-)
+SEXUAL_RE = re.compile(r"(?:porn|porno|xxx|sex|nude|onlyfans|اباحي|إباحي|اباحية|إباحية|جنسي|جنسية|سكس|عاري|عارية)", re.I)
+AD_RE = re.compile(r"(?:اعلان مدفوع|إعلان مدفوع|دعاية تجارية|ترويج مدفوع|عرض خاص|خصم حصري|احجز الآن|للبيع|للإيجار|قناتنا|مجموعتنا|تابعنا)", re.I)
 
-# تم تخفيف كلمات الإعلانات لتجنب الحظر الخاطئ
-AD_RE = re.compile(
-    r"(?:اعلان مدفوع|إعلان مدفوع|دعاية تجارية|ترويج مدفوع|"
-    r"عرض خاص|خصم حصري|احجز الآن|للبيع|للإيجار|"
-    r"قناتنا|مجموعتنا|تابعنا)",
-    re.I,
-)
+CAR_REPLY = '''🚘 <b>للسيارات بسائق أو بدون سائق</b>
 
-TOURISM = {
-    "البوسنة": (
-        "البوسنة من أفضل الوجهات للعائلات ومحبي الطبيعة. "
-        "أبرز المدن: سراييفو، موستار، بيهاتش، يايتسى، ترافنيك وفلاشيتش."
-    ),
-    "تركيا": (
-        "تركيا مناسبة للعائلات والتسوق والطبيعة. "
-        "من أشهر الوجهات: إسطنبول، طرابزون، بورصة وأنطاليا."
-    ),
-    "جورجيا": (
-        "جورجيا مناسبة للطبيعة والجبال. "
-        "من أشهر الوجهات: تبليسي، باتومي وكازبيجي."
-    ),
-    "كازاخستان": (
-        "كازاخستان مميزة بالطبيعة والجبال، وألماتي من أبرز المدن السياحية."
-    ),
-}
+التواصل واتساب أبو دره:
+wa.me/966543171395
 
-CITY_INFO = {
-    "سراييفو": (
-        "من أبرز الأماكن: باشچارشيا، التلفريك، نفق الحياة، "
-        "فريلو بوسنة، جبل تريبفيتش وصني لاند."
-    ),
-    "بيهاتش": (
-        "بيهاتش ممتازة للطبيعة ونهر أونا. "
-        "من أبرز الرحلات: شلال شترباتشكي بوك ومارتن برود، "
-        "وتناسب غالبًا 2 إلى 3 ليالٍ."
-    ),
-    "موستار": (
-        "من أبرز الأماكن: الجسر القديم، المدينة القديمة، "
-        "بلاغاي، بوتشيتلي وشلالات كرافيتسا."
-    ),
-    "يايتسى": (
-        "يايتسى معروفة بالشلال وسط المدينة وبحيرات بليفا "
-        "والطواحين الخشبية، وتناسب ليلة أو زيارة يوم كامل."
-    ),
-    "يايتسه": (
-        "يايتسى معروفة بالشلال وسط المدينة وبحيرات بليفا "
-        "والطواحين الخشبية، وتناسب ليلة أو زيارة يوم كامل."
-    ),
-    "ترافنيك": (
-        "ترافنيك مناسبة لزيارة القلعة والمدينة القديمة، "
-        "ويمكن دمجها مع فلاشيتش في نفس المسار."
-    ),
-    "فلاشيتش": (
-        "فلاشيتش منطقة جبلية مناسبة للطبيعة والهدوء والأجواء الباردة."
-    ),
-    "كونيتس": (
-        "كونيتس بلدة جميلة على نهر نيريتفا، "
-        "وتناسب التوقف بين سراييفو وموستار والأنشطة النهرية."
-    ),
-    "توزلا": (
-        "توزلا مدينة هادئة تشتهر ببحيرات الملح."
-    ),
-}
+أو أ/ أحمد الزهراني:
+0966566117011 📞'''
 
-ROUTES = {
-    ("سراييفو", "موستار"): (
-        "المسافة تقريبًا 130 كم، والقيادة غالبًا ساعتان إلى ساعتين ونصف."
-    ),
-    ("سراييفو", "بيهاتش"): (
-        "المسافة تقريبًا 300–315 كم، والقيادة غالبًا 4.5 إلى 5 ساعات."
-    ),
-    ("سراييفو", "ترافنيك"): (
-        "المسافة تقريبًا 90 كم، والقيادة غالبًا قرابة ساعة ونصف."
-    ),
-    ("سراييفو", "يايتسى"): (
-        "المسافة تقريبًا 160 كم، والقيادة غالبًا 2.5 إلى 3 ساعات."
-    ),
-    ("سراييفو", "يايتسه"): (
-        "المسافة تقريبًا 160 كم، والقيادة غالبًا 2.5 إلى 3 ساعات."
-    ),
-}
+SARAJEVO_HOSPITAL_REPLY = '''🏨 <b>مستشفيات سراييفو</b>
 
-SERVICES = [
-    "🚗 تأجير سيارة",
-    "🏡 سكن / فيلا / شقة",
-    "🏨 فندق",
-    "🗺 برنامج سياحي",
-    "🚐 سائق / نقل",
-    "🛂 تأشيرة",
-    "📱 شريحة eSIM",
-    "✈️ تذاكر سفر",
+🔺 مستشفى الدكتور عبدالله وكاش العام – 24 ساعة
+https://maps.app.goo.gl/PsDzNkZiJ5zHTrtE8?g_st=iwb
+
+🔺 مستشفى أطفال AV paediatric
+https://maps.app.goo.gl/G6QYiiGzXUvFZnzf8?g_st=iw
+
+🔺 مستشفى للكبار والأطفال
+https://maps.app.goo.gl/L6uTMyeALyBEV5nL7?g_st=ic
+
+🔺 مستشفى ساناسا – إليجا
+https://maps.app.goo.gl/Z5hXMDFoQf5gzex3A?g_st=ic'''
+
+EXCHANGE_REPLY = '''💸📍 <b>مواقع خدمة تبديل العملة في سراييفو</b>
+
+🔺 البلدة القديمة:
+1) https://maps.app.goo.gl/deyfQtNPKGsFJBQg8
+2) https://maps.app.goo.gl/dEqcgtAuPKzYh1eh6
+3) https://maps.app.goo.gl/7XNh1ZTMWCERntLA6
+4) https://maps.app.goo.gl/BHos58nXiPPXXQZq8
+5) https://maps.app.goo.gl/M9wrfCGt1LuR4AnM7
+
+🔺 بالقرب من البلدة القديمة:
+• ألتا مول:
+https://maps.app.goo.gl/zfSfhKXgayHShCyLA
+• BBI مول:
+https://maps.app.goo.gl/WwG9cPcuHrhAfmME7
+• سراييفو سيتي سنتر:
+https://maps.app.goo.gl/igwnoxJJta8xYubS7
+
+🔺 بين السنتر وإليجا:
+• Bingo City Centre:
+https://maps.app.goo.gl/99RhWhwuhUDDpiYg6
+
+🔺 إليجا:
+• مركز سارة:
+https://maps.app.goo.gl/33qufLYyw6RGUMfC6
+• جراند سنتر:
+https://maps.app.goo.gl/c5fPDed3DFcpfVXPA
+
+🔺 مطار سراييفو:
+https://maps.app.goo.gl/bSpSbFH2yHSpEhZf6?g_st=ic
+
+🔺 بالقرب من إليجا – Penny Plus:
+https://g.co/kgs/Kev7yqZ
+
+ملاحظة: أسعار الصرف والعمولات تختلف من صراف لآخر.'''
+
+SARAJEVO_TERMS = ["سراييفو", "سرايفو", "sarajevo"]
+BIHAC_TERMS = ["بيهاتش", "بيهاج", "bihac", "bihać"]
+
+HOSPITAL_PATTERNS = [r"مستشفى", r"مستشفيات", r"طوارئ", r"مستشفى اطفال", r"مستشفى أطفال"]
+EXCHANGE_PATTERNS = [r"صراف", r"صرافين", r"صرف عملة", r"تبديل عملة", r"وين اصرف", r"وين أصرف", r"تحويل عملة"]
+CAR_PATTERNS = [
+    r"ابغى شركة تأجير", r"أبغى شركة تأجير", r"احتاج شركة تأجير", r"أحتاج شركة تأجير",
+    r"شركة تأجير سيارات", r"ابغى سيارة بسائق", r"أبغى سيارة بسائق", r"احتاج سيارة بسائق",
+    r"أحتاج سيارة بسائق", r"ابغى سيارة بدون سائق", r"أبغى سيارة بدون سائق",
+    r"احتاج سيارة بدون سائق", r"أحتاج سيارة بدون سائق", r"ابغى سائق", r"أبغى سائق",
+    r"احتاج سائق", r"أحتاج سائق", r"ابغى سايق", r"أبغى سايق", r"احتاج سايق",
+    r"أحتاج سايق", r"مين يوفر سيارة", r"من يوفر سيارة", r"مين عنده شركة سيارات",
+    r"شركة سيارات", r"ابغى شركة سياحية", r"أبغى شركة سياحية", r"احتاج شركة سياحية",
+    r"أحتاج شركة سياحية", r"شركة سياحية"
 ]
+hospital_rx = [re.compile(p, re.I) for p in HOSPITAL_PATTERNS]
+exchange_rx = [re.compile(p, re.I) for p in EXCHANGE_PATTERNS]
+car_rx = [re.compile(p, re.I) for p in CAR_PATTERNS]
 
-QUESTION_WORDS = [
-    "وين", "أين", "اين", "كيف", "كم", "وش", "ماهي", "ما هي",
-    "افضل", "أفضل", "تنصح", "هل", "متى", "طريق", "المسافة",
-    "أماكن", "اماكن", "فعاليات", "سكن", "فندق", "سيارة", "سائق",
-    "تأشيرة", "برنامج", "رحلة", "مطعم", "مطاعم",
-]
+def contains_any(text, terms):
+    low = text.lower()
+    return any(t.lower() in low for t in terms)
 
+def matches_any(text, pats):
+    return any(p.search(text) for p in pats)
+
+def detect_service_request(text):
+    low = text.lower().strip()
+    if matches_any(low, hospital_rx):
+        if contains_any(low, SARAJEVO_TERMS):
+            return "hospital_sarajevo"
+        if contains_any(low, BIHAC_TERMS):
+            return None
+        return None
+    if matches_any(low, exchange_rx):
+        if contains_any(low, BIHAC_TERMS):
+            return None
+        return "exchange_sarajevo"
+    if matches_any(low, car_rx):
+        return "car_service"
+    return None
 
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def init_db():
     with db() as conn:
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS members(
-            chat_id INTEGER,
-            user_id INTEGER,
-            warnings INTEGER DEFAULT 0,
-            PRIMARY KEY(chat_id, user_id)
-        )
-        """)
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS requests(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            text TEXT,
-            created_at TEXT
-        )
-        """)
+        conn.execute("CREATE TABLE IF NOT EXISTS members(chat_id INTEGER, user_id INTEGER, warnings INTEGER DEFAULT 0, PRIMARY KEY(chat_id,user_id))")
         conn.commit()
 
-
-async def is_admin(message: Message):
+async def is_admin(message):
     try:
-        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-        return member.status in {
-            ChatMemberStatus.ADMINISTRATOR,
-            ChatMemberStatus.CREATOR,
-        }
+        m = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        return m.status in {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR}
     except Exception:
         return False
 
-
-def is_flood(message: Message):
+def is_flood(message):
     key = (message.chat.id, message.from_user.id)
     now = time.time()
     q = flood_cache[key]
     q.append(now)
-
     while q and now - q[0] > FLOOD_WINDOW:
         q.popleft()
-
     return len(q) >= FLOOD_LIMIT
 
-
-def add_warning(chat_id: int, user_id: int):
+def add_warning(chat_id, user_id):
     with db() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO members(chat_id,user_id,warnings) VALUES(?,?,0)",
-            (chat_id, user_id),
-        )
-        conn.execute(
-            "UPDATE members SET warnings=warnings+1 WHERE chat_id=? AND user_id=?",
-            (chat_id, user_id),
-        )
+        conn.execute("INSERT OR IGNORE INTO members(chat_id,user_id,warnings) VALUES(?,?,0)", (chat_id,user_id))
+        conn.execute("UPDATE members SET warnings=warnings+1 WHERE chat_id=? AND user_id=?", (chat_id,user_id))
         conn.commit()
+        return conn.execute("SELECT warnings FROM members WHERE chat_id=? AND user_id=?", (chat_id,user_id)).fetchone()["warnings"]
 
-        return conn.execute(
-            "SELECT warnings FROM members WHERE chat_id=? AND user_id=?",
-            (chat_id, user_id),
-        ).fetchone()["warnings"]
-
-
-async def notify_admin(message: Message, reason: str, action: str):
-    if not ADMIN_CHAT_ID:
-        return
-
-    try:
-        await bot.send_message(
-            int(ADMIN_CHAT_ID),
-            f"🛡 <b>مخالفة</b>\n"
-            f"العضو: {message.from_user.full_name}\n"
-            f"السبب: {reason}\n"
-            f"الإجراء: {action}",
-        )
-    except Exception:
-        pass
-
-
-async def moderate(message: Message, reason: str, severe: bool = False):
-    # احذف الرسالة فقط في البداية لتقليل الحظر بالخطأ
+async def moderate(message, reason, severe=False):
     try:
         await message.delete()
     except Exception:
         pass
-
     warnings = add_warning(message.chat.id, message.from_user.id)
-
     action = "حذف الرسالة"
-
     try:
-        # المحتوى الإباحي الصريح: كتم بعد أول مخالفة، والحظر فقط بعد تكرار كثير
         if severe:
             if warnings >= BAN_AFTER_WARNINGS:
                 await bot.ban_chat_member(message.chat.id, message.from_user.id)
                 action = "حظر بعد تكرار المخالفات"
             elif warnings >= 2:
                 until = datetime.now(timezone.utc) + timedelta(minutes=MUTE_MINUTES)
-                await bot.restrict_chat_member(
-                    message.chat.id,
-                    message.from_user.id,
-                    ChatPermissions(can_send_messages=False),
-                    until_date=until,
-                )
+                await bot.restrict_chat_member(message.chat.id, message.from_user.id, ChatPermissions(can_send_messages=False), until_date=until)
                 action = f"كتم {MUTE_MINUTES} دقيقة"
-
-        # الإعلانات والسبام: لا حظر سريع
-        else:
-            if warnings >= 5:
-                until = datetime.now(timezone.utc) + timedelta(minutes=MUTE_MINUTES)
-                await bot.restrict_chat_member(
-                    message.chat.id,
-                    message.from_user.id,
-                    ChatPermissions(can_send_messages=False),
-                    until_date=until,
-                )
-                action = f"كتم {MUTE_MINUTES} دقيقة"
-
+        elif warnings >= 5:
+            until = datetime.now(timezone.utc) + timedelta(minutes=MUTE_MINUTES)
+            await bot.restrict_chat_member(message.chat.id, message.from_user.id, ChatPermissions(can_send_messages=False), until_date=until)
+            action = f"كتم {MUTE_MINUTES} دقيقة"
     except Exception:
         action = "حذف الرسالة"
-
-    await notify_admin(message, reason, action)
-
-
-def route_answer(text: str):
-    low = text.lower()
-
-    for (a, b), answer in ROUTES.items():
-        if a in low and b in low:
-            return f"🚗 <b>{a} ← {b}</b>\n{answer}"
-
-    return None
-
-
-def tourism_answer(text: str):
-    low = text.lower().strip()
-
-    route = route_answer(low)
-    if route:
-        return route
-
-    for city, answer in CITY_INFO.items():
-        if city in low:
-            return f"📍 <b>{city}</b>\n{answer}"
-
-    for country, answer in TOURISM.items():
-        if country in low:
-            return f"🌍 <b>{country}</b>\n{answer}"
-
-    if any(x in low for x in ["وين اسافر", "وين أسافر", "اقترح وجهة", "أفضل دولة", "افضل دولة"]):
-        return (
-            "✈️ أرسل لي شهر السفر، عدد الأيام، عدد المسافرين، الميزانية، "
-            "وهل تفضل طبيعة أو مدن أو شواطئ."
-        )
-
-    if any(x in low for x in ["طريق", "كيف اروح", "كيف أروح", "المسافة", "كم ساعة", "كم تبعد"]):
-        return (
-            "🚗 اكتب اسم المدينتين في نفس الرسالة، مثال:\n"
-            "كم تبعد سراييفو عن موستار؟"
-        )
-
-    if any(x in low for x in ["افضل مكان", "أفضل مكان", "أماكن", "اماكن", "فعاليات", "وين نروح"]):
-        return (
-            "📍 اكتب اسم المدينة التي تقصدها، مثال:\n"
-            "أفضل الأماكن في بيهاتش؟"
-        )
-
-    return None
-
-
-def looks_like_tourism_question(text: str):
-    low = text.lower().strip()
-
-    if not low:
-        return False
-
-    if "؟" in text or "?" in text:
-        return True
-
-    return any(word in low for word in QUESTION_WORDS)
-
+    if ADMIN_CHAT_ID:
+        try:
+            await bot.send_message(int(ADMIN_CHAT_ID), f"🛡 <b>مخالفة</b>\nالعضو: {message.from_user.full_name}\nالسبب: {reason}\nالإجراء: {action}")
+        except Exception:
+            pass
 
 @router.message(CommandStart())
 async def start(message: Message):
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📩 طلب خدمة سياحية",
-                    callback_data="request_service",
-                )
-            ]
-        ]
-    )
-
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🚘 طلب سيارة / سائق", callback_data="car_service")]])
     await message.answer(
         f"أهلًا بك في <b>{BRAND_NAME}</b> ✈️\n\n"
-        "مساعد سياحي عام، ويعمل في المجموعات كنظام حماية من "
-        "الدعايات والمحتوى الإباحي والسبام.",
-        reply_markup=kb,
+        "داخل المجموعة أتدخل فقط في:\n"
+        "• مستشفيات سراييفو\n"
+        "• صرافين سراييفو\n"
+        "• طلب سيارة / سائق / شركة سياحية\n\n"
+        "وباقي الأسئلة نتركها لتفاعل أعضاء المجموعة.",
+        reply_markup=kb
     )
 
-
-@router.callback_query(F.data == "request_service")
-async def request_service(cb):
-    await cb.message.answer(
-        "اكتب طلبك في رسالة واحدة مع:\n"
-        "• نوع الخدمة\n"
-        "• الدولة/المدينة\n"
-        "• تاريخ السفر\n"
-        "• عدد المسافرين\n"
-        "• رقم الجوال\n\n"
-        "وسأحفظ الطلب للإدارة."
-    )
+@router.callback_query(lambda c: c.data == "car_service")
+async def car_service_callback(cb):
+    await cb.message.answer(CAR_REPLY)
     await cb.answer()
-
 
 @router.message(Command("services"))
 async def services(message: Message):
-    await message.answer("<b>الخدمات:</b>\n" + "\n".join(SERVICES))
-
-
-@router.message(Command("request"))
-async def request_cmd(message: Message):
-    await message.answer(
-        "أرسل طلبك في رسالة واحدة، مثال:\n"
-        "فندق في سراييفو - 20 أكتوبر - 4 أشخاص - 05xxxxxxxx"
-    )
-
+    await message.answer("🏨 مستشفيات سراييفو\n💸 صرافين سراييفو\n🚘 سيارة بسائق أو بدون سائق / شركة سياحية")
 
 @router.message()
 async def handle_all(message: Message):
-    # تجاهل أي رسالة مرسلة من بوت آخر
     if not message.from_user or message.from_user.is_bot:
         return
-
     text = (message.text or message.caption or "").strip()
-
-    # حماية المجموعات
-    if message.chat.type in {"group", "supergroup"} and not await is_admin(message):
-        if SEXUAL_RE.search(text):
-            return await moderate(
-                message,
-                "محتوى أو إيحاء جنسي/إباحي",
-                severe=True,
-            )
-
-        if AD_RE.search(text):
-            return await moderate(
-                message,
-                "إعلان أو ترويج غير مصرح",
-                severe=False,
-            )
-
-        if "t.me/" in text.lower():
-            return await moderate(
-                message,
-                "رابط قناة أو مجموعة دعائي",
-                severe=False,
-            )
-
-        if is_flood(message):
-            return await moderate(
-                message,
-                "Spam / Flood",
-                severe=False,
-            )
-
     if not text:
         return
 
-    answer = tourism_answer(text)
-    if answer:
-        return await message.reply(answer)
+    if message.chat.type in {"group","supergroup"} and not await is_admin(message):
+        if SEXUAL_RE.search(text):
+            return await moderate(message, "محتوى أو إيحاء جنسي/إباحي", severe=True)
+        if AD_RE.search(text):
+            return await moderate(message, "إعلان أو ترويج غير مصرح", severe=False)
+        if "t.me/" in text.lower():
+            return await moderate(message, "رابط قناة أو مجموعة دعائي", severe=False)
+        if is_flood(message):
+            return await moderate(message, "Spam / Flood", severe=False)
 
-    if message.chat.type in {"group", "supergroup"} and looks_like_tourism_question(text):
-        return await message.reply(
-            "✈️ حاضر، أقدر أساعدك.\n"
-            "اكتب اسم الدولة أو المدينة وتفاصيل سؤالك، مثل:\n"
-            "• أفضل الأماكن في بيهاتش؟\n"
-            "• كم تبعد سراييفو عن موستار؟\n"
-            "• أبغى برنامج للبوسنة 8 أيام."
-        )
+    service = detect_service_request(text)
 
-    keywords = [
-        "حجز", "فندق", "سيارة", "سائق", "فيلا",
-        "تأشيرة", "esim", "تذكرة", "برنامج", "سكن",
-    ]
+    if service == "hospital_sarajevo":
+        return await message.reply(SARAJEVO_HOSPITAL_REPLY)
+    if service == "exchange_sarajevo":
+        return await message.reply(EXCHANGE_REPLY)
+    if service == "car_service":
+        return await message.reply(CAR_REPLY)
 
-    if message.chat.type == "private" and any(k in text.lower() for k in keywords):
-        with db() as conn:
-            cur = conn.execute(
-                "INSERT INTO requests(user_id,text,created_at) VALUES(?,?,?)",
-                (message.from_user.id, text, datetime.now().isoformat()),
-            )
-            conn.commit()
-            req_no = f"AD-{cur.lastrowid:05d}"
-
-        await message.answer(
-            f"✅ تم استلام طلبك\n"
-            f"رقم الطلب: <code>{req_no}</code>"
-        )
-
-        if ADMIN_CHAT_ID:
-            try:
-                await bot.send_message(
-                    int(ADMIN_CHAT_ID),
-                    f"📩 طلب جديد {req_no}\n\n{text}",
-                )
-            except Exception:
-                pass
-
+    if message.chat.type in {"group","supergroup"}:
         return
 
-    if message.chat.type == "private":
-        await message.answer(
-            "✈️ اكتب سؤالك السياحي، أو اذكر الدولة/المدينة التي تريد معلومات عنها.\n"
-            "مثال: أفضل الأماكن في سراييفو؟"
-        )
-
+    await message.answer(
+        "✈️ اكتب طلبك بشكل واضح، مثل:\n"
+        "• أحتاج مستشفى في سراييفو\n"
+        "• وين أصرف في سراييفو؟\n"
+        "• أبغى سيارة بسائق\n"
+        "• أبغى شركة سياحية"
+    )
 
 async def main():
     init_db()
     print("Abudorh bot is running...")
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     import asyncio
